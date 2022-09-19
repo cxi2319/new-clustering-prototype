@@ -1,7 +1,9 @@
 """Functions to clean, process and manipulate data
 """
-import pandas as pd
 import streamlit as st
+import numpy as np
+import datetime
+import os
 
 QUERY = """
 with get_searches as (
@@ -51,6 +53,23 @@ group by 1,2,3,4,5,6
 order by 1 desc
 """
 
+# Determine the first day of the week, based on today's date
+def first_day_of_week(date):
+    return date + datetime.timedelta(days=-date.weekday())
+
+
+# Create a filepath dynamic to a user-inputted date
+def get_filepath(date, type):
+    first = "/Users/cxi/datascience/clustering_prototype/"
+    if type == "Business Info":
+        last = date + "_cluster_names_experiences.csv"
+    elif type == "Full Data":
+        last == date + "_full_cluster_data.csv"
+    elif type == "Group By":
+        last = date + "_clusters_groupby.csv"
+    path = os.path.join(first, last)
+    return path
+
 
 def process_full_df(df, business_id, experience_key):
     # Filter the entire main dataset to only contain data for that business/experience
@@ -76,3 +95,18 @@ def filter_clusters(df, filter):
         new = False
         df_filtered_cluster = df[df["is_new"] == new]
     return df_filtered_cluster
+
+
+def get_top_nc(df):
+    # Create a helper column that contains the row of the dataframe, since indicies are tied to the
+    # larger dataset and thus inaccurate
+    df["rank"] = np.arange(len(df)) + 1
+    # Get the number of searches for the top-searched new cluster. This may result in more than one
+    # value
+    value = df.loc[df["is_new"] == True, "cluster_searches"].max()
+    # For cases where the top new cluster shares the same searches as one or more existing clusters,
+    # filter for only new clusters
+    true = df[df["is_new"] == True]
+    # Get the table rank of the top new cluster
+    pos = true.loc[true["cluster_searches"] == value, "rank"].item()
+    return pos
