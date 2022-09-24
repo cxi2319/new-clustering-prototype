@@ -2,6 +2,28 @@
 """
 import pandas as pd
 import streamlit as st
+from utils import processing
+from datetime import date, timedelta
+
+
+def get_dates(week_start):
+    # User-selected input for cluster run date
+    cluster_run = st.date_input(
+        label="Select an weekly cluster run. Please select the Monday of the week you'd like to view clustering data from:",
+        value=week_start,
+    )
+    # Check to see if the inputted date is the Monday of the week to view clustering for, to make reading the file easier
+    if cluster_run != week_start:
+        # Check to see if the inputted date isn't a previous Monday. If not, then raise an exception
+        if cluster_run != week_start - timedelta(days=7):
+            raise Exception(
+                "Please select the Monday of the week you'd like to view clustering data from."
+            )
+
+    # Convert input date to a string, and replace the default slashes with the '_' used in the filepath since slashes are not compatible
+    filepath_date = processing.clean_dates(cluster_run)
+    return filepath_date
+
 
 # initialize_businesses loads name and experience data to populate the select boxes.
 def initialize_businesses(filepath):
@@ -32,3 +54,11 @@ def filter_businesses(df, business):
 def convert_df(df):
     # Cache the conversion to prevent computation on every rerun
     return df.to_csv().encode("utf-8")
+
+
+# Load raw data Snowflake query
+def raw_query():
+    st.header("Raw Snowflake Query")
+    with st.expander("View Query"):
+        code = st.code(processing.QUERY, language="sql")
+    return code

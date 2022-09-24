@@ -58,13 +58,18 @@ def first_day_of_week(date):
     return date + datetime.timedelta(days=-date.weekday())
 
 
+# String formatting for dates
+def clean_dates(date):
+    filepath_date = date.strftime("%Y/%m/%d")
+    filepath_date = filepath_date.replace("/", "_")
+    return filepath_date
+
+
 # Create a filepath dynamic to a user-inputted date
 def get_filepath(date, type):
     first = "/Users/cxi/datascience/clustering_prototype/"
     if type == "Business Info":
         last = date + "_cluster_names_experiences.csv"
-    elif type == "Full Data":
-        last == date + "_full_cluster_data.csv"
     elif type == "Group By":
         last = date + "_clusters_groupby.csv"
     path = os.path.join(first, last)

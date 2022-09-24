@@ -2,81 +2,84 @@
 """
 import streamlit as st
 import pandas as pd
-import numpy as np
 import matplotlib.pyplot as plt
 from datetime import date
 from numerize.numerize import numerize
 from utils import loading, processing
 from st_aggrid import GridOptionsBuilder, AgGrid
+from os.path import exists
 
+DEFAULT_DATE = "2022_09_12"
 
 st.set_page_config(page_title="New Clustering Prototype", page_icon="gear")
 st.title("New Clustering Prototype")
 
-# Set filepaths for .csv upload
-# TODO: Make this sensitive to user-inputted dates so they can select a weekly clustering run to analyze
-# Set default date option to the first day of the corresponding week
+# Get the current date
 today = date.today()
-start_date = processing.first_day_of_week(today)
-cluster_run = st.date_input(
-    label="Select an weekly cluster run. Please select the Monday of the week you'd like to view clustering data from:",
-    value=start_date,
-)
-# Check to see if the inputted date is the Monday of the week to view clustering for, to make reading the file easier
-if cluster_run != start_date:
-    raise Exception("Please select the Monday of the week you'd like to view clustering data from")
-# Convert input date to a string, and replace the default slashes with the '_' used in the filepath since slashes are not compatible
-filepath_date = start_date.strftime("%Y/%m/%d")
-filepath_date = filepath_date.replace("/", "_")
+# Get the Monday of the current week
+week_start = processing.first_day_of_week(today)
 
-# Initialize each dataframe
-BUSINESS_INFO_FP = processing.get_filepath(filepath_date, type="Business Info")
-FULL_DATA_FP = processing.get_filepath(filepath_date, type="Business Info")
-GROUPBY_FP = processing.get_filepath(filepath_date, type="Group By")
+# Get the date for the clustering run
+filepath_date = loading.get_dates(week_start)
 
+# Get filepaths, first checking to see if the filepath exists. If not, set default date to 9/12
+if exists(processing.get_filepath(filepath_date, type="Business Info")):
+    business_info_fp = processing.get_filepath(filepath_date, type="Business Info")
+else:
+    st.markdown(
+        "**Sorry! We have not yet loaded clustering data for {}. Setting date to default and loading data from the default date: 2022-09-12.**".format(
+            week_start
+        )
+    )
+    business_info_fp = processing.get_filepath(DEFAULT_DATE, type="Business Info")
 
-# Business selection
-BUSINESS_LOOKUP = loading.initialize_businesses(BUSINESS_INFO_FP)
-ACCOUNTS = BUSINESS_LOOKUP["name"]
+if exists(processing.get_filepath(filepath_date, type="Group By")):
+    groupby_fp = processing.get_filepath(filepath_date, type="Group By")
+else:
+    groupby_fp = processing.get_filepath(DEFAULT_DATE, type="Group By")
+
+# Business selection widget
+business_lookup = loading.initialize_businesses(business_info_fp)
+accounts = business_lookup["name"]
 
 st.sidebar.write("Business Filter Selection")
-business_id = st.sidebar.selectbox("Select an account", options=ACCOUNTS)
+business_id = st.sidebar.selectbox("Select an account", options=accounts)
 
-# Experience selection
-FILTERED_BUSINESS_LOOKUP = loading.filter_businesses(BUSINESS_LOOKUP, business_id)
-EXPERIENCES = FILTERED_BUSINESS_LOOKUP["experience_key"]
+# Experience selection widget
+filtered_business_lookup = loading.filter_businesses(business_lookup, business_id)
+experiences = filtered_business_lookup["experience_key"]
 
-experience_key = st.sidebar.selectbox("Select an experience key", options=EXPERIENCES)
+experience_key = st.sidebar.selectbox("Select an experience key", options=experiences)
 
 # Add additional filters
 st.sidebar.write("Additional Filter Selection")
 # Filter for cluster type: new or existing
 is_new = st.sidebar.selectbox("Select a cluster type", options=["All", "New only", "Existing only"])
 
-# Load filtered dataframe containing all cluster data
-DF_FULL = loading.initialize_full_data(GROUPBY_FP)
-DF_TABLE_DISPLAY = DF_FULL.drop("num_clusters", axis=1)
+# Load full dataframe that contains all cluster data
+df_full = loading.initialize_full_data(groupby_fp)
+df_table_display = df_full.drop("num_clusters", axis=1)
 
-# Filter full dataframe containing all business-leve cluster and search term data
-DF_FULL_BUSINESS = processing.process_full_df(DF_TABLE_DISPLAY, business_id, experience_key)
+# Filter the full dataframe based on the user inputs for business and experience
+df_full_business = processing.process_full_df(df_table_display, business_id, experience_key)
 
 # Separate into tabs
 tab1, tab2, tab3 = st.tabs(["Business-Level Cluster Table", "Data Exploration", "Raw Data"])
 
 with tab1:
-    # Hero numbers
+    # Hero number columns
     col1, col2, col3, col4 = st.columns(4)
     # Get number of new clusters
-    num_new_clusters = len(DF_FULL_BUSINESS[DF_FULL_BUSINESS["is_new"] == True])
+    num_new_clusters = len(df_full_business[df_full_business["is_new"] == True])
     try:
-        pct_new = "{}%".format(round(num_new_clusters / len(DF_FULL_BUSINESS) * 100), 2)
+        pct_new = "{}%".format(round(num_new_clusters / len(df_full_business) * 100), 2)
     except ZeroDivisionError:
         print(
             "No recent new clusters found for this business. Please select another business with clustering data from the past run."
         )
 
     # Get the highest 'table position' of a new cluster for a given account
-    sort_searches_desc = DF_FULL_BUSINESS.sort_values(by="cluster_searches", ascending=False)
+    sort_searches_desc = df_full_business.sort_values(by="cluster_searches", ascending=False)
     try:
         top_nc_pos = processing.get_top_nc(sort_searches_desc)
     except ValueError:
@@ -97,7 +100,7 @@ with tab1:
             "No recent new clusters found for this business. Please select another business with clustering data from the past run."
         )
     col2.metric("Count of New Clusters", numerize(num_new_clusters))
-    col3.metric("Count of All Clusters", numerize(len(DF_FULL_BUSINESS)))
+    col3.metric("Count of All Clusters", numerize(len(df_full_business)))
     try:
         col4.metric("% All Clusters", pct_new)
     except NameError:
@@ -105,17 +108,17 @@ with tab1:
     # Additional configuration specific to any additional filters the user may have selected
     if is_new == "All":
         st.header("All Clusters")
-        df_sorted_isnew = DF_FULL_BUSINESS.sort_values(by="is_new", ascending=False)
+        df_sorted_isnew = df_full_business.sort_values(by="cluster_searches", ascending=False)
         AgGrid(df_sorted_isnew, height=700, theme="dark", fit_columns_on_grid_load=True)
 
     if is_new == "New only":
-        df_filtered_cluster = processing.filter_clusters(DF_FULL_BUSINESS, is_new)
+        df_filtered_cluster = processing.filter_clusters(df_full_business, is_new)
         st.header("All New Clusters")
         df_sorted_cluster = df_filtered_cluster.sort_values(by="cluster_searches", ascending=False)
         AgGrid(df_sorted_cluster, height=700, theme="dark", fit_columns_on_grid_load=True)
 
     if is_new == "Existing only":
-        df_filtered_cluster = processing.filter_clusters(DF_FULL_BUSINESS, is_new)
+        df_filtered_cluster = processing.filter_clusters(df_full_business, is_new)
         st.header("All Existing (Non-New) Clusters")
         df_sorted_cluster = df_filtered_cluster.sort_values(by="cluster_searches", ascending=False)
         AgGrid(df_sorted_cluster, height=700, theme="dark", fit_columns_on_grid_load=True)
@@ -129,7 +132,7 @@ with tab2:
 
     # Filter dataframe for the histogram...grouping a .csv file is annoying
     # First filter for all new clusters, across all accounts
-    df_hist_isnew = DF_FULL[DF_FULL["is_new"] == True]
+    df_hist_isnew = df_full[df_full["is_new"] == True]
     # Then group by name and experience key and find the sum of new clusters across each experience
     df_hist_isnew = df_hist_isnew.groupby(
         by=["business_id", "name", "experience_key"], as_index=False
@@ -149,7 +152,7 @@ with tab2:
     )
 
     # Calculate new clusters as a % of the total
-    df_hist_all = DF_FULL.groupby(
+    df_hist_all = df_full.groupby(
         by=["business_id", "name", "experience_key"], as_index=False
     ).sum()
     df_hist_all["pct_total_clusters"] = round(
@@ -217,14 +220,14 @@ with tab3:
     with st.expander("View Query"):
         st.code(processing.QUERY, language="sql")
     # Raw data table, all businesses, grouped by search cluster
-    build_config = GridOptionsBuilder.from_dataframe(DF_TABLE_DISPLAY)
+    build_config = GridOptionsBuilder.from_dataframe(df_table_display)
     build_config.configure_pagination(paginationPageSize=200)
     build_config = build_config.build()
     st.header("Raw Data Table")
-    AgGrid(DF_TABLE_DISPLAY, height=1000, theme="dark", gridOptions=build_config)
+    AgGrid(df_table_display, height=1000, theme="dark", gridOptions=build_config)
 
     # Allow users to export raw data table to .csv table
-    raw_data_csv = loading.convert_df(DF_FULL)
+    raw_data_csv = loading.convert_df(df_full)
     st.download_button(
         label="Download raw data as CSV",
         data=raw_data_csv,
