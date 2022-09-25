@@ -3,7 +3,6 @@
 import pandas as pd
 import streamlit as st
 from utils import processing
-from datetime import date, timedelta
 
 
 def get_dates(week_start):
@@ -14,11 +13,9 @@ def get_dates(week_start):
     )
     # Check to see if the inputted date is the Monday of the week to view clustering for, to make reading the file easier
     if cluster_run != week_start:
-        # Check to see if the inputted date isn't a previous Monday. If not, then raise an exception
-        if cluster_run != week_start - timedelta(days=7):
-            raise Exception(
-                "Please select the Monday of the week you'd like to view clustering data from."
-            )
+        # Check to see if the inputted date is a previous Monday. If not, then set it to the Monday of the week the user selected.
+        if cluster_run not in pd.date_range(start="2022/09/12", periods=1000, freq="W-MON"):
+            cluster_run = processing.first_day_of_week(cluster_run)
 
     # Convert input date to a string, and replace the default slashes with the '_' used in the filepath since slashes are not compatible
     filepath_date = processing.clean_dates(cluster_run)
